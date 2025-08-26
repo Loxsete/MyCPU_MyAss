@@ -9,11 +9,11 @@ INCLUDE_DIR = include
 BIN_DIR = bin
 
 # Source files
-SRCS = $(SRC_DIR)/emulator.c $(SRC_DIR)/cpu.c $(SRC_DIR)/bios.c $(SRC_DIR)/window.c
+SRCS = $(SRC_DIR)/emulator.c $(SRC_DIR)/cpu.c $(SRC_DIR)/bios.c $(SRC_DIR)/window.c $(SRC_DIR)/disk.c
 ASSEMBLER_SRC = $(SRC_DIR)/assembler.c
 
 # Object files
-OBJS = $(BIN_DIR)/emulator.o $(BIN_DIR)/cpu.o $(BIN_DIR)/bios.o $(BIN_DIR)/window.o
+OBJS = $(BIN_DIR)/emulator.o $(BIN_DIR)/cpu.o $(BIN_DIR)/bios.o $(BIN_DIR)/window.o $(BIN_DIR)/disk.o
 ASSEMBLER_OBJ = $(BIN_DIR)/assembler.o
 
 # Output binaries
@@ -42,10 +42,13 @@ $(BIN_DIR)/emulator.o: $(SRC_DIR)/emulator.c $(INCLUDE_DIR)/cpu.h $(INCLUDE_DIR)
 $(BIN_DIR)/cpu.o: $(SRC_DIR)/cpu.c $(INCLUDE_DIR)/cpu.h
 		$(CC) $(CFLAGS) -c $< -o $@
 
-$(BIN_DIR)/bios.o: $(SRC_DIR)/bios.c $(INCLUDE_DIR)/bios.h $(INCLUDE_DIR)/cpu.h
+$(BIN_DIR)/bios.o: $(SRC_DIR)/bios.c $(INCLUDE_DIR)/bios.h $(INCLUDE_DIR)/cpu.h $(INCLUDE_DIR)/disk.h
 		$(CC) $(CFLAGS) -c $< -o $@
 
 $(BIN_DIR)/window.o: $(SRC_DIR)/window.c $(INCLUDE_DIR)/window.h $(INCLUDE_DIR)/bios.h $(INCLUDE_DIR)/cpu.h
+		$(CC) $(CFLAGS) -c $< -o $@
+
+$(BIN_DIR)/disk.o: $(SRC_DIR)/disk.c $(INCLUDE_DIR)/disk.h
 		$(CC) $(CFLAGS) -c $< -o $@
 
 $(BIN_DIR)/assembler.o: $(SRC_DIR)/assembler.c

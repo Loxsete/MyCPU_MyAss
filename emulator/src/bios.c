@@ -1,4 +1,3 @@
-
 #include "bios.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,7 +11,6 @@ BIOS* bios_init() {
         exit(1);
     }
     memset(bios, 0, sizeof(*bios));
-    // Scan bin/ directory for .bin files
     DIR* dir = opendir("bin");
     if (dir) {
         struct dirent* entry;
@@ -31,6 +29,7 @@ BIOS* bios_init() {
         printf("BIOS: Failed to open bin directory!\n");
     }
     bios->initial_screen = 1;
+    bios->disk = disk_init();
     return bios;
 }
 void bios_cleanup(BIOS* bios) {
@@ -39,6 +38,7 @@ void bios_cleanup(BIOS* bios) {
     }
     free(bios->program_output);
     free(bios->program_file);
+    disk_cleanup(bios->disk);
     free(bios);
 }
 void bios_poll_input(BIOS* bios) {
@@ -76,12 +76,11 @@ static void copy_line_to_mem_and_clear(CPU* cpu, BIOS* bios, uint16_t addr) {
 void bios_handle_interrupt(CPU* cpu, BIOS* bios) {
     if (cpu->interrupt == 0) return;
     switch (cpu->interrupt) {
-       
-        case 2: { // INT 2: Output string from address in AX
-            uint16_t addr = cpu->registers[0]; // Адрес строки
+        case 2: {
+            uint16_t addr = cpu->registers[0];
             uint8_t* memory_bytes = (uint8_t*)cpu->memory;
             size_t max_addr = cpu->memory_size * sizeof(uint16_t);
-            size_t buffer_size = 1024; // Увеличим размер буфера
+            size_t buffer_size = 1024;
             char* buffer = (char*)malloc(buffer_size);
             if (!buffer) {
                 printf("Error: Failed to allocate buffer for output!\n");
@@ -100,10 +99,10 @@ void bios_handle_interrupt(CPU* cpu, BIOS* bios) {
             free(buffer);
             break;
         }
-        case 3: { // INT 3: Screen functions
+        case 3: {
             uint8_t func = cpu->registers[0] & 0xFF;
             switch (func) {
-                case 0x01: { // New line
+                case 0x01: {
                     if (bios->program_output) {
                         size_t len = strlen(bios->program_output);
                         char* temp = malloc(len + 2);
@@ -119,7 +118,7 @@ void bios_handle_interrupt(CPU* cpu, BIOS* bios) {
                     }
                     break;
                 }
-                case 0x02: { // Clear screen
+                case 0x02: {
                     free(bios->program_output);
                     bios->program_output = strdup("");
                     break;
@@ -130,12 +129,12 @@ void bios_handle_interrupt(CPU* cpu, BIOS* bios) {
             }
             break;
         }
-        case 4: { // INT 4: Delay in milliseconds
+        case 4: {
             uint16_t delay_ms = cpu->registers[0];
-            WaitTime((float)delay_ms / 1000.0f); // blocks CPU for given ms
+            WaitTime((float)delay_ms / 1000.0f);
             break;
         }
-        case 6: { // INT 6: Load .bin file by index in AX
+        case 6: {
             if (cpu->registers[0] < bios->file_count) {
                 char filepath[256];
                 snprintf(filepath, sizeof(filepath), "bin/%s", bios->file_list[cpu->registers[0]]);
@@ -150,10 +149,10 @@ void bios_handle_interrupt(CPU* cpu, BIOS* bios) {
             }
             break;
         }
-        case 1: { // INT 1: Keyboard input
+        case 1: {
             uint8_t func = (uint8_t)(cpu->registers[0] & 0xFF);
             switch (func) {
-                case 0x01: { // GET_KEY
+                case 0x01: {
                     int ch = GetCharPressed();
                     if (ch > 0) {
                         cpu->registers[0] = (uint16_t)ch;
@@ -164,13 +163,19 @@ void bios_handle_interrupt(CPU* cpu, BIOS* bios) {
                     } else if (IsKeyPressed(KEY_ENTER)) {
                         cpu->registers[0] = '\n';
                         cpu->zero_flag = 0;
+                    } else if (IsKeyPressed(KEY_ESCAPE)) {
+                        cpu->registers[0] = 27;
+                        cpu->zero_flag = 0;
+                    } else if (IsKeyPressed(KEY_TAB)) {
+                        cpu->registers[0] = 9;
+                        cpu->zero_flag = 0;
                     } else {
                         cpu->registers[0] = 0;
                         cpu->zero_flag = 1;
                     }
                     break;
                 }
-                case 0x02: { // PEEK_KEY
+                case 0x02: {
                     int ch = GetCharPressed();
                     if (ch > 0) {
                         cpu->registers[0] = (uint16_t)ch;
@@ -181,13 +186,19 @@ void bios_handle_interrupt(CPU* cpu, BIOS* bios) {
                     } else if (IsKeyDown(KEY_ENTER)) {
                         cpu->registers[0] = '\n';
                         cpu->zero_flag = 0;
+                    } else if (IsKeyDown(KEY_ESCAPE)) {
+                        cpu->registers[0] = 27;
+                        cpu->zero_flag = 0;
+                    } else if (IsKeyDown(KEY_TAB)) {
+                        cpu->registers[0] = 9;
+                        cpu->zero_flag = 0;
                     } else {
                         cpu->registers[0] = 0;
                         cpu->zero_flag = 1;
                     }
                     break;
                 }
-                case 0x03: { // READ_LINE to buffer at BX
+                case 0x03: {
                     bios->read_line_active = 1;
                     uint16_t addr = cpu->registers[1];
                     copy_line_to_mem_and_clear(cpu, bios, addr);
@@ -200,13 +211,38 @@ void bios_handle_interrupt(CPU* cpu, BIOS* bios) {
             }
             break;
         }
-        case 9: { // INT 9: Compatibility READ_LINE to address 100
+        case 9: {
             bios->read_line_active = 1;
             if (bios->input_length > 0) {
                 copy_line_to_mem_and_clear(cpu, bios, 100);
                 cpu->registers[0] = 100;
             } else {
                 cpu->registers[0] = 0;
+            }
+            break;
+        }
+        case 10: {
+            uint8_t func = cpu->registers[0] & 0xFF;
+            switch (func) {
+                case 0x01: {
+                    disk_read(bios->disk, cpu->registers[1], cpu->registers[2], (uint8_t*)cpu->memory);
+                    cpu->zero_flag = (bios->disk->last_error == 0) ? 0 : 1;
+                    break;
+                }
+                case 0x02: {
+                    disk_write(bios->disk, cpu->registers[1], cpu->registers[2], (uint8_t*)cpu->memory);
+                    cpu->zero_flag = (bios->disk->last_error == 0) ? 0 : 1;
+                    break;
+                }
+                case 0x03: {
+                    uint16_t status = disk_status(bios->disk);
+                    cpu->registers[0] = status;
+                    cpu->zero_flag = (status == 0) ? 0 : 1;
+                    break;
+                }
+                default:
+                    cpu->zero_flag = 1;
+                    break;
             }
             break;
         }

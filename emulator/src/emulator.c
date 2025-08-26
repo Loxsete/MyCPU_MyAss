@@ -5,13 +5,11 @@
 #include "cpu.h"
 #include "bios.h"
 #include "window.h"
-
 typedef struct {
     CPU* cpu;
     BIOS* bios;
     Window* window;
 } Emulator;
-
 static Emulator* emulator_init(size_t memory_size, size_t stack_size) {
     Emulator* emu = (Emulator*)malloc(sizeof(Emulator));
     if (!emu) { printf("Error: Failed to allocate memory for emulator!\n"); exit(1); }
@@ -21,14 +19,12 @@ static Emulator* emulator_init(size_t memory_size, size_t stack_size) {
     emu->bios->initial_screen = 1;
     return emu;
 }
-
 static void emulator_cleanup(Emulator* emu) {
     cpu_cleanup(emu->cpu);
     bios_cleanup(emu->bios);
     window_cleanup(emu->window);
     free(emu);
 }
-
 static void handle_menu_input(BIOS* bios, CPU* cpu) {
     if (bios->initial_screen) {
         if (IsKeyPressed(KEY_UP)) { if (bios->selected_file > 0) bios->selected_file--; }
@@ -47,39 +43,30 @@ static void handle_menu_input(BIOS* bios, CPU* cpu) {
             }
         }
     } else {
-        // Q - return to menu
         if (IsKeyPressed(KEY_Q)) {
             cpu->running = 0;
             bios->program_file = NULL;
             free(bios->program_output);
             bios->program_output = NULL;
             bios->initial_screen = 1;
-            bios->read_line_active = 0; // Reset READ_LINE mode
+            bios->read_line_active = 0;
         }
     }
 }
-
 static void emulator_run(Emulator* emu) {
     while (!WindowShouldClose()) {
-        // 1) Poll input only if READ_LINE is active
-        if (emu->bios->read_line_active) {
-            bios_poll_input(emu->bios);
-        }
-        // 2) Handle menu input (select .bin)
+        bios_poll_input(emu->bios);
         handle_menu_input(emu->bios, emu->cpu);
-        // 3) Execute program and handle interrupts
         if (emu->bios->program_file != NULL && emu->cpu->running && !emu->bios->initial_screen) {
             cpu_execute_instruction(emu->cpu);
             bios_handle_interrupt(emu->cpu, emu->bios);
         }
-        // 4) Render
         window_render(emu->window, emu->bios, emu->cpu);
     }
 }
-
 int main(int argc, char* argv[]) {
-    size_t memory_size = 4096; // words
-    size_t stack_size = 1024; // words
+    size_t memory_size = 4096;
+    size_t stack_size = 1024;
     if (argc > 2) {
         memory_size = (size_t)atoi(argv[1]);
         stack_size = (size_t)atoi(argv[2]);
