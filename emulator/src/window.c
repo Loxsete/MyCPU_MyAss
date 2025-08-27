@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <raylib.h>
+
 Window* window_init() {
     Window* win = (Window*)malloc(sizeof(Window));
     if (!win) {
@@ -11,38 +12,33 @@ Window* window_init() {
     }
     win->width = 800;
     win->height = 600;
+    
     SetTraceLogLevel(LOG_NONE);
     InitWindow(win->width, win->height, "CPU Emulator");
     SetTargetFPS(60);
-<<<<<<< HEAD
+    
     win->font = LoadFont("font/font.ttf");
     if (win->font.texture.id == 0) {
         printf("Error: Failed to load font from font/font.ttf!\n");
-=======
-    win->font = LoadFont("font/DejaVuSansMono.ttf");
-    if (win->font.texture.id == 0) {
-        printf("Error: Failed to load font from font/DejaVuSansMono.ttf!\n");
->>>>>>> 571b330a280fcad8fbe7b4735126db0376450423
-        exit(1);
+        win->font = LoadFont("font/DejaVuSansMono.ttf");
+        if (win->font.texture.id == 0) {
+            printf("Error: Failed to load font from font/DejaVuSansMono.ttf!\n");
+            exit(1);
+        }
     }
     return win;
 }
+
 void window_cleanup(Window* win) {
     UnloadFont(win->font);
     CloseWindow();
     free(win);
 }
+
 void window_render(Window* win, BIOS* bios, CPU* cpu) {
     BeginDrawing();
-<<<<<<< HEAD
-    ClearBackground(BLACK);
-    Color text = WHITE;
-    if (bios->initial_screen) {
-        const char* title = "Select Binary File";
-        float title_x = win->width / 2 - MeasureTextEx(win->font, title, 28, 1).x / 2;
-        DrawTextEx(win->font, title, (Vector2){title_x, 80}, 28, 1, text);
-=======
     ClearBackground((Color){20, 20, 25, 255});
+    
     Color text = {220, 220, 230, 255};
     Color glow = {200, 200, 220, 50};
     Color highlight = {40, 40, 50, 255};
@@ -56,7 +52,6 @@ void window_render(Window* win, BIOS* bios, CPU* cpu) {
         DrawTextEx(win->font, title, (Vector2){title_x + 1, 81}, 24, 1, glow);
         DrawTextEx(win->font, title, (Vector2){title_x, 80}, 24, 1, accent);
 
->>>>>>> 571b330a280fcad8fbe7b4735126db0376450423
         if (bios->file_count == 0) {
             const char* no_files = "No .bin files found";
             float no_files_x = win->width / 2 - MeasureTextEx(win->font, no_files, 18, 1).x / 2;
@@ -66,23 +61,6 @@ void window_render(Window* win, BIOS* bios, CPU* cpu) {
                 float y_pos = 140 + i * 40;
                 Rectangle rect = {win->width / 2 - 200, y_pos - 4, 400, 32};
                 if (i == bios->selected_file) {
-<<<<<<< HEAD
-                    char selected[256];
-                    snprintf(selected, sizeof(selected), "> %s", bios->file_list[i]);
-                    float file_x = win->width / 2 - MeasureTextEx(win->font, selected, 20, 1).x / 2;
-                    DrawTextEx(win->font, selected, (Vector2){file_x, y_pos}, 20, 1, text);
-                } else {
-                    float file_x = win->width / 2 - MeasureTextEx(win->font, bios->file_list[i], 20, 1).x / 2;
-                    DrawTextEx(win->font, bios->file_list[i], (Vector2){file_x, y_pos}, 20, 1, text);
-                }
-            }
-        }
-    } else {
-        char buf[256];
-        snprintf(buf, sizeof(buf), "%s", bios->program_file ? bios->program_file : "Unknown");
-        DrawTextEx(win->font, buf, (Vector2){20, 20}, 18, 1, text);
-        if (bios->program_output) {
-=======
                     DrawRectangleRounded(rect, 0.3, 8, cursor);
                     DrawRectangleLinesEx(rect, 1, border);
                 }
@@ -100,44 +78,31 @@ void window_render(Window* win, BIOS* bios, CPU* cpu) {
 
         if (bios->program_output) {
             DrawTextEx(win->font, "Output:", (Vector2){20, 50}, 20, 1, accent);
-            Color output_color = (win->output_flash > 0) ? cursor : text;
->>>>>>> 571b330a280fcad8fbe7b4735126db0376450423
             float y_pos = 80;
             char* output = bios->program_output;
             char* line_start = output;
             char* line_end;
+            
             while ((line_end = strchr(line_start, '\n')) != NULL) {
                 size_t line_len = line_end - line_start;
                 char line[256];
                 strncpy(line, line_start, line_len);
                 line[line_len] = '\0';
-<<<<<<< HEAD
-                DrawTextEx(win->font, line, (Vector2){20, y_pos}, 24, 1, text);
-                y_pos += 30;
-                line_start = line_end + 1;
-            }
-            if (*line_start) {
-                DrawTextEx(win->font, line_start, (Vector2){20, y_pos}, 24, 1, text);
-=======
-                DrawTextEx(win->font, line, (Vector2){20, y_pos}, 20, 1, output_color);
+                DrawTextEx(win->font, line, (Vector2){20, y_pos}, 20, 1, text);
                 y_pos += 26;
                 line_start = line_end + 1;
             }
             if (*line_start) {
-                DrawTextEx(win->font, line_start, (Vector2){20, y_pos}, 20, 1, output_color);
->>>>>>> 571b330a280fcad8fbe7b4735126db0376450423
+                DrawTextEx(win->font, line_start, (Vector2){20, y_pos}, 20, 1, text);
             }
         }
-<<<<<<< HEAD
-=======
 
->>>>>>> 571b330a280fcad8fbe7b4735126db0376450423
         if (cpu->pc < cpu->program_size) {
             uint16_t instr = cpu->memory[cpu->pc];
             uint8_t op = (instr >> 11) & 0x1F;
             uint8_t r1 = (instr >> 8) & 0x7;
-            uint16_t val = instr & 0xFF;
             const char* os = "UNKNOWN";
+            
             switch (op) {
                 case 0: os = "NOP"; break;
                 case 1: os = "HLT"; break;
@@ -170,6 +135,7 @@ void window_render(Window* win, BIOS* bios, CPU* cpu) {
                 case 28: os = "MOV_REG_MEM"; break;
                 case 29: os = "MOV_MEM_REG"; break;
             }
+            
             char line[128];
             if (op == 0 || op == 1 || op == 18 || op == 19 || op == 23) {
                 snprintf(line, sizeof(line), "PC: %u | %s", cpu->pc, os);
@@ -182,20 +148,19 @@ void window_render(Window* win, BIOS* bios, CPU* cpu) {
                 snprintf(line, sizeof(line), "PC: %u | %s %s", cpu->pc, os,
                          (r1 == 0) ? "AX" : (r1 == 1) ? "BX" : (r1 == 2) ? "CX" : "DX");
             }
-<<<<<<< HEAD
-            DrawTextEx(win->font, line, (Vector2){20, 460}, 16, 1, text);
-=======
+            
             Rectangle rect = {10, win->height - 50, 340, 36};
             DrawRectangleRounded(rect, 0.3, 8, highlight);
             DrawRectangleLinesEx(rect, 1, border);
             DrawTextEx(win->font, line, (Vector2){20, win->height - 42}, 14, 1, text);
->>>>>>> 571b330a280fcad8fbe7b4735126db0376450423
         }
+        
         if (bios->read_line_active) {
             char input[256];
             snprintf(input, sizeof(input), "%s_", bios->input_buffer);
             DrawTextEx(win->font, input, (Vector2){20, 520}, 24, 1, text);
         }
     }
+    
     EndDrawing();
 }
