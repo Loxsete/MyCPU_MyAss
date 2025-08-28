@@ -5,8 +5,11 @@
 #include <dirent.h>
 #include "cpu.h"
 #include "disk.h"
+
 #define MAX_FILES 100
 #define INPUT_BUFFER_SIZE 256
+#define MAX_FILENAME 64
+
 typedef struct {
     char* file_list[MAX_FILES];
     int file_count;
@@ -18,10 +21,15 @@ typedef struct {
     char input_buffer[INPUT_BUFFER_SIZE];
     int monitor_mode;
     int read_line_active;
+    char** history;
+    int history_count;
+    int history_index;
     Disk* disk;
 } BIOS;
+
 BIOS* bios_init();
 void bios_cleanup(BIOS* bios);
 void bios_handle_interrupt(CPU* cpu, BIOS* bios);
 void bios_poll_input(BIOS* bios);
+
 #endif

@@ -1,25 +1,32 @@
 #include "cpu.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+
 CPU* cpu_init(size_t memory_size, size_t stack_size) {
     CPU* cpu = (CPU*)malloc(sizeof(CPU));
     if (!cpu) { printf("Error: Failed to allocate memory for CPU!\n"); exit(1); }
+
     memset(cpu, 0, sizeof(*cpu));
     cpu->sp = (uint16_t)(memory_size + stack_size);
     cpu->memory_size = memory_size;
     cpu->stack_size  = stack_size;
+
     cpu->memory = (uint16_t*)malloc((memory_size + stack_size) * sizeof(uint16_t));
     if (!cpu->memory) { printf("Error: Failed to allocate memory for CPU memory!\n"); exit(1); }
     memset(cpu->memory, 0, (memory_size + stack_size) * sizeof(uint16_t));
+
     cpu->running = 1;
     return cpu;
 }
+
 void cpu_cleanup(CPU* cpu) {
     free(cpu->memory);
     free(cpu);
 }
+
 void cpu_load_program(CPU* cpu, const char* filename) {
     FILE* file = fopen(filename, "rb");
     if (!file) {
@@ -29,6 +36,8 @@ void cpu_load_program(CPU* cpu, const char* filename) {
     fseek(file, 0, SEEK_END);
     size_t file_size = ftell(file);
     fseek(file, 0, SEEK_SET);
+    
+    // Читаем бинарный файл в память, начиная с адреса 0
     uint8_t* cpu_bytes = (uint8_t*)cpu->memory;
     size_t read = fread(cpu_bytes, 1, file_size, file);
     fclose(file);
@@ -36,70 +45,89 @@ void cpu_load_program(CPU* cpu, const char* filename) {
         printf("Error: Read %zu bytes, expected %zu from %s!\n", read, file_size, filename);
         return;
     }
+   
+    // Устанавливаем начальный PC на адрес .org (0x1000) в байтах
     uint16_t org_address = 0x1000;
-    cpu->pc = org_address / sizeof(uint16_t);
-    size_t total_words = cpu->memory_size;
+    cpu->pc = org_address / sizeof(uint16_t); // Конвертируем байты в слова (2048)
+   
+    // Рассчитываем размер программы в словах от начала памяти
+    size_t total_words = cpu->memory_size; // Вся доступная память
     cpu->program_size = total_words;
+   
     printf("Program loaded: file_size=%zu bytes, PC=0x%04x (%u words), program_size=%zu words\n",
            file_size, org_address, cpu->pc, cpu->program_size);
 }
+
 uint8_t cpu_read_byte(CPU* cpu, uint16_t address) {
     size_t max = cpu->memory_size * sizeof(uint16_t);
     if (address >= max) return 0;
     return ((uint8_t*)cpu->memory)[address];
 }
+
 void cpu_write_byte(CPU* cpu, uint16_t address, uint8_t value) {
     size_t max = cpu->memory_size * sizeof(uint16_t);
     if (address >= max) return;
     ((uint8_t*)cpu->memory)[address] = value;
 }
+
 void cpu_execute_instruction(CPU* cpu) {
     if (!cpu->running) {
         return;
     }
+    
+    // Проверяем границы программы
     if (cpu->pc >= cpu->program_size) {
         printf("Error: PC (%u) out of program bounds (%zu)!\n", cpu->pc, cpu->program_size);
         cpu->running = 0;
         return;
     }
+    
     uint16_t instruction = cpu->memory[cpu->pc];
+    
+    // Проверяем, что инструкция не равна 0 (возможно конец программы)
     if (instruction == 0) {
         printf("Warning: Encountered zero instruction at PC %u, halting\n", cpu->pc);
         cpu->running = 0;
         return;
     }
-    uint8_t opcode = (instruction >> 11) & 0x1F;
-    uint8_t reg1 = (instruction >> 8) & 0x7;
-    uint8_t mode = instruction & 0x1F;
+    
+    uint8_t opcode = (instruction >> 11) & 0x1F; // 5 бит для опкода
+    uint8_t reg1 = (instruction >> 8) & 0x7; // 3 бита для первого регистра
+    uint8_t mode = instruction & 0x1F; // 5 бит для режима
     uint16_t value = 0;
     uint8_t reg2 = 0;
-    int is_reg2 = (mode == 2);
-    if (mode == 3 || mode == 4 || mode == 5 || mode == 6 || mode == 7) {
+    int is_reg2 = (mode == 2); // mode 2 = reg-reg
+    
+    if (mode == 3 || mode == 4 || mode == 5 || mode == 6 || mode == 7) { // reg-imm, reg-mem, imm, reg-[mem], [mem]-reg
         if (cpu->pc + 1 >= cpu->program_size) {
             printf("Error: PC (%u) out of bounds for immediate value!\n", cpu->pc);
             cpu->running = 0;
             return;
         }
-        value = cpu->memory[cpu->pc + 1];
+        value = cpu->memory[cpu->pc + 1]; // Следующее слово — значение
         cpu->pc++;
     } else if (is_reg2) {
-        reg2 = (instruction >> 5) & 0x7;
+        reg2 = (instruction >> 5) & 0x7; // 3 бита для второго регистра
     }
+    
     printf("Executing PC: %u, Instruction: 0x%04x (opcode: %u, reg1: %u, mode: %u, value: 0x%04x, is_reg2: %d, reg2: %u)\n",
            cpu->pc, instruction, opcode, reg1, mode, value, is_reg2, reg2);
     cpu->pc++;
+
+    // Проверяем валидность регистров
     if (reg1 >= NUM_REGISTERS || (is_reg2 && reg2 >= NUM_REGISTERS)) {
         printf("Error: Invalid register index (reg1: %u, reg2: %u) at PC %u!\n", reg1, reg2, cpu->pc - 1);
         cpu->running = 0;
         return;
     }
+
     switch (opcode) {
-        case 0:
+        case 0: // NOP
             break;
-        case 1:
+        case 1: // HLT
             cpu->running = 0;
             break;
-        case 2:
+        case 2: // MOV
             if (is_reg2) {
                 cpu->registers[reg1] = cpu->registers[reg2];
             } else if (mode == 3 || mode == 4) {
@@ -111,7 +139,7 @@ void cpu_execute_instruction(CPU* cpu) {
             cpu->zero_flag = (cpu->registers[reg1] == 0) ? 1 : 0;
             cpu->sign_flag = (cpu->registers[reg1] & 0x8000) ? 1 : 0;
             break;
-        case 3:
+        case 3: // ADD
             if (is_reg2) {
                 uint32_t result = cpu->registers[reg1] + cpu->registers[reg2];
                 cpu->carry_flag = (result > 0xFFFF) ? 1 : 0;
@@ -127,7 +155,7 @@ void cpu_execute_instruction(CPU* cpu) {
             cpu->zero_flag = (cpu->registers[reg1] == 0) ? 1 : 0;
             cpu->sign_flag = (cpu->registers[reg1] & 0x8000) ? 1 : 0;
             break;
-        case 4:
+        case 4: // SUB
             if (is_reg2) {
                 uint32_t result = cpu->registers[reg1] - cpu->registers[reg2];
                 cpu->carry_flag = (cpu->registers[reg1] < cpu->registers[reg2]) ? 1 : 0;
@@ -143,7 +171,7 @@ void cpu_execute_instruction(CPU* cpu) {
             cpu->zero_flag = (cpu->registers[reg1] == 0) ? 1 : 0;
             cpu->sign_flag = (cpu->registers[reg1] & 0x8000) ? 1 : 0;
             break;
-        case 5:
+        case 5: // MUL
             if (is_reg2) {
                 uint32_t result = cpu->registers[reg1] * cpu->registers[reg2];
                 cpu->carry_flag = (result > 0xFFFF) ? 1 : 0;
@@ -159,7 +187,7 @@ void cpu_execute_instruction(CPU* cpu) {
             cpu->zero_flag = (cpu->registers[reg1] == 0) ? 1 : 0;
             cpu->sign_flag = (cpu->registers[reg1] & 0x8000) ? 1 : 0;
             break;
-        case 6:
+        case 6: // DIV
             if (is_reg2) {
                 if (cpu->registers[reg2] != 0) {
                     cpu->registers[reg1] /= cpu->registers[reg2];
@@ -183,7 +211,7 @@ void cpu_execute_instruction(CPU* cpu) {
                 cpu->running = 0;
             }
             break;
-        case 7:
+        case 7: // MOD
             if (is_reg2) {
                 if (cpu->registers[reg2] != 0) {
                     cpu->registers[reg1] %= cpu->registers[reg2];
@@ -207,7 +235,7 @@ void cpu_execute_instruction(CPU* cpu) {
                 cpu->running = 0;
             }
             break;
-        case 8:
+        case 8: // AND
             if (is_reg2) {
                 cpu->registers[reg1] &= cpu->registers[reg2];
             } else if (mode == 3) {
@@ -219,7 +247,7 @@ void cpu_execute_instruction(CPU* cpu) {
             cpu->zero_flag = (cpu->registers[reg1] == 0) ? 1 : 0;
             cpu->sign_flag = (cpu->registers[reg1] & 0x8000) ? 1 : 0;
             break;
-        case 9:
+        case 9: // OR
             if (is_reg2) {
                 cpu->registers[reg1] |= cpu->registers[reg2];
             } else if (mode == 3) {
@@ -231,7 +259,7 @@ void cpu_execute_instruction(CPU* cpu) {
             cpu->zero_flag = (cpu->registers[reg1] == 0) ? 1 : 0;
             cpu->sign_flag = (cpu->registers[reg1] & 0x8000) ? 1 : 0;
             break;
-        case 10:
+        case 10: // XOR
             if (is_reg2) {
                 cpu->registers[reg1] ^= cpu->registers[reg2];
             } else if (mode == 3) {
@@ -243,7 +271,7 @@ void cpu_execute_instruction(CPU* cpu) {
             cpu->zero_flag = (cpu->registers[reg1] == 0) ? 1 : 0;
             cpu->sign_flag = (cpu->registers[reg1] & 0x8000) ? 1 : 0;
             break;
-        case 11:
+        case 11: // NOT
             if (mode == 1) {
                 cpu->registers[reg1] = ~cpu->registers[reg1];
                 cpu->zero_flag = (cpu->registers[reg1] == 0) ? 1 : 0;
@@ -253,7 +281,7 @@ void cpu_execute_instruction(CPU* cpu) {
                 cpu->running = 0;
             }
             break;
-        case 12:
+        case 12: // NEG
             if (mode == 1) {
                 cpu->registers[reg1] = -cpu->registers[reg1];
                 cpu->zero_flag = (cpu->registers[reg1] == 0) ? 1 : 0;
@@ -263,7 +291,7 @@ void cpu_execute_instruction(CPU* cpu) {
                 cpu->running = 0;
             }
             break;
-        case 13:
+        case 13: // SHL
             if (is_reg2) {
                 if (cpu->registers[reg2] < 16) {
                     cpu->carry_flag = (cpu->registers[reg2] > 0 && (cpu->registers[reg1] & (1 << (16 - cpu->registers[reg2])))) ? 1 : 0;
@@ -287,7 +315,7 @@ void cpu_execute_instruction(CPU* cpu) {
             cpu->zero_flag = (cpu->registers[reg1] == 0) ? 1 : 0;
             cpu->sign_flag = (cpu->registers[reg1] & 0x8000) ? 1 : 0;
             break;
-        case 14:
+        case 14: // SHR
             if (is_reg2) {
                 if (cpu->registers[reg2] < 16 && cpu->registers[reg2] > 0) {
                     cpu->carry_flag = (cpu->registers[reg1] & (1 << (cpu->registers[reg2] - 1))) ? 1 : 0;
@@ -311,11 +339,11 @@ void cpu_execute_instruction(CPU* cpu) {
             cpu->zero_flag = (cpu->registers[reg1] == 0) ? 1 : 0;
             cpu->sign_flag = (cpu->registers[reg1] & 0x8000) ? 1 : 0;
             break;
-        case 15:
+        case 15: // CMP
             if (is_reg2) {
                 uint32_t result = cpu->registers[reg1] - cpu->registers[reg2];
                 cpu->zero_flag = (result == 0) ? 1 : 0;
-                cpu->carry_flag = (cpu->registers[reg1] < cpu->registers[reg2]) ? 1 : 0;
+ cpu->carry_flag = (cpu->registers[reg1] < cpu->registers[reg2]) ? 1 : 0;
                 cpu->sign_flag = (result & 0x8000) ? 1 : 0;
             } else if (mode == 3) {
                 uint32_t result = cpu->registers[reg1] - value;
@@ -327,7 +355,7 @@ void cpu_execute_instruction(CPU* cpu) {
                 cpu->running = 0;
             }
             break;
-        case 16:
+        case 16: // PUSH
             if (mode == 1) {
                 if (cpu->sp > cpu->memory_size) {
                     cpu->sp--;
@@ -341,7 +369,7 @@ void cpu_execute_instruction(CPU* cpu) {
                 cpu->running = 0;
             }
             break;
-        case 17:
+        case 17: // POP
             if (mode == 1) {
                 if (cpu->sp < cpu->memory_size + cpu->stack_size) {
                     cpu->registers[reg1] = cpu->memory[cpu->sp];
@@ -355,7 +383,7 @@ void cpu_execute_instruction(CPU* cpu) {
                 cpu->running = 0;
             }
             break;
-        case 18:
+        case 18: // PUSHA
             if (mode == 0) {
                 if (cpu->sp > cpu->memory_size + NUM_REGISTERS - 1) {
                     for (int i = NUM_REGISTERS - 1; i >= 0; i--) {
@@ -371,7 +399,7 @@ void cpu_execute_instruction(CPU* cpu) {
                 cpu->running = 0;
             }
             break;
-        case 19:
+        case 19: // POPA
             if (mode == 0) {
                 if (cpu->sp < cpu->memory_size + cpu->stack_size - NUM_REGISTERS) {
                     for (int i = 0; i < NUM_REGISTERS; i++) {
@@ -387,7 +415,7 @@ void cpu_execute_instruction(CPU* cpu) {
                 cpu->running = 0;
             }
             break;
-        case 20:
+        case 20: // INT
             if (mode == 5) {
                 cpu->interrupt = value;
             } else {
@@ -395,9 +423,9 @@ void cpu_execute_instruction(CPU* cpu) {
                 cpu->running = 0;
             }
             break;
-        case 21:
+        case 21: // JMP
             if (mode == 5 || mode == 4) {
-                uint16_t target_pc = value / sizeof(uint16_t);
+                uint16_t target_pc = value / sizeof(uint16_t); // Конвертируем байты в слова
                 if (target_pc < cpu->program_size) {
                     cpu->pc = target_pc;
                 } else {
@@ -409,12 +437,12 @@ void cpu_execute_instruction(CPU* cpu) {
                 cpu->running = 0;
             }
             break;
-        case 22:
+        case 22: // CALL
             if (mode == 5 || mode == 4) {
                 if (cpu->sp > cpu->memory_size) {
                     cpu->sp--;
                     cpu->memory[cpu->sp] = cpu->pc;
-                    uint16_t target_pc = value / sizeof(uint16_t);
+                    uint16_t target_pc = value / sizeof(uint16_t); // Конвертируем байты в слова
                     if (target_pc < cpu->program_size) {
                         cpu->pc = target_pc;
                     } else {
@@ -430,7 +458,7 @@ void cpu_execute_instruction(CPU* cpu) {
                 cpu->running = 0;
             }
             break;
-        case 23:
+        case 23: // RET
             if (mode == 0) {
                 if (cpu->sp < cpu->memory_size + cpu->stack_size) {
                     cpu->pc = cpu->memory[cpu->sp];
@@ -444,10 +472,10 @@ void cpu_execute_instruction(CPU* cpu) {
                 cpu->running = 0;
             }
             break;
-        case 24:
+        case 24: // JZ
             if (mode == 5 || mode == 4) {
                 if (cpu->zero_flag) {
-                    uint16_t target_pc = value / sizeof(uint16_t);
+                    uint16_t target_pc = value / sizeof(uint16_t); // Конвертируем байты в слова
                     if (target_pc < cpu->program_size) {
                         cpu->pc = target_pc;
                     } else {
@@ -460,10 +488,10 @@ void cpu_execute_instruction(CPU* cpu) {
                 cpu->running = 0;
             }
             break;
-        case 25:
+        case 25: // JNZ
             if (mode == 5 || mode == 4) {
                 if (!cpu->zero_flag) {
-                    uint16_t target_pc = value / sizeof(uint16_t);
+                    uint16_t target_pc = value / sizeof(uint16_t); // Конвертируем байты в слова
                     if (target_pc < cpu->program_size) {
                         cpu->pc = target_pc;
                     } else {
@@ -476,10 +504,10 @@ void cpu_execute_instruction(CPU* cpu) {
                 cpu->running = 0;
             }
             break;
-        case 26:
+        case 26: // JG
             if (mode == 5 || mode == 4) {
                 if (!cpu->zero_flag && !cpu->sign_flag) {
-                    uint16_t target_pc = value / sizeof(uint16_t);
+                    uint16_t target_pc = value / sizeof(uint16_t); // Конвертируем байты в слова
                     if (target_pc < cpu->program_size) {
                         cpu->pc = target_pc;
                     } else {
@@ -492,10 +520,10 @@ void cpu_execute_instruction(CPU* cpu) {
                 cpu->running = 0;
             }
             break;
-        case 27:
+        case 27: // JL
             if (mode == 5 || mode == 4) {
                 if (cpu->sign_flag) {
-                    uint16_t target_pc = value / sizeof(uint16_t);
+                    uint16_t target_pc = value / sizeof(uint16_t); // Конвертируем байты в слова
                     if (target_pc < cpu->program_size) {
                         cpu->pc = target_pc;
                     } else {
@@ -508,7 +536,7 @@ void cpu_execute_instruction(CPU* cpu) {
                 cpu->running = 0;
             }
             break;
-        case 28:
+        case 28: // MOV reg, [mem]
             if (mode == 6) {
                 if (value < cpu->memory_size * sizeof(uint16_t)) {
                     cpu->registers[reg1] = cpu->memory[value / sizeof(uint16_t)];
@@ -523,7 +551,7 @@ void cpu_execute_instruction(CPU* cpu) {
                 cpu->running = 0;
             }
             break;
-        case 29:
+        case 29: // MOV [mem], reg
             if (mode == 7) {
                 if (value < cpu->memory_size * sizeof(uint16_t)) {
                     cpu->memory[value / sizeof(uint16_t)] = cpu->registers[reg1];
